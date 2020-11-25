@@ -1,7 +1,7 @@
 # Part of the implementation of this container is based on the Amazon SageMaker Apache MXNet container.
 # https://github.com/aws/sagemaker-mxnet-container
 
-# 1. 
+# 1.
 FROM ubuntu:16.04
 
 # 2. Defining some variables used at build time to install Python3
@@ -36,6 +36,9 @@ RUN wget https://www.python.org/ftp/python/$PYTHON_VERSION/Python-$PYTHON_VERSIO
 
 RUN ${PIP} --no-cache-dir install --upgrade pip
 RUN ln -s $(which ${PYTHON}) /usr/local/bin/python
+
+# FIX conflict
+RUN ${PIP} install --no-cache --upgrade boto3==1.14.55
 
 WORKDIR /
 
