@@ -1,0 +1,200 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Parameters" : {
+      "NotebookRoleArn" : {
+        "Type" : "String"
+      },
+     "BucketName" : {
+        "Type" : "String"
+      },
+    },
+    "Resources": {
+      "StepFunctionsRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "RoleName": {"Fn::Sub": "StepFunctions_DSSDK-${AWS::AccountId}"},
+            "AssumeRolePolicyDocument": {
+               "Version" : "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": [ "states.amazonaws.com" ]
+                  },
+                  "Action": [ "sts:AssumeRole" ]
+               } ]
+            },
+            "Path": "/"
+         }
+      },
+        
+      "StepFunctionsRolePolicies": {
+         "Type": "AWS::IAM::Policy",
+         "Properties": {
+            "PolicyName": {"Fn::Sub": "StepFunctionsDSSDK-${AWS::AccountId}"},
+            "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Action": "iam:PassRole",
+                        "Resource": {"Ref": "NotebookRoleArn"},
+                        "Condition": {
+                            "StringEquals": {
+                                "iam:PassedToService": "sagemaker.amazonaws.com"
+                            }
+                        }
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "sagemaker:CreateModel",
+                            "sagemaker:DeleteEndpointConfig",
+                            "sagemaker:DescribeTrainingJob",
+                            "sagemaker:CreateEndpoint",
+                            "sagemaker:StopTrainingJob",
+                            "sagemaker:CreateTrainingJob",
+                            "sagemaker:UpdateEndpoint",
+                            "sagemaker:CreateEndpointConfig",
+                            "sagemaker:DeleteEndpoint"
+                        ],
+                        "Resource": [
+                            "arn:aws:sagemaker:*:*:*"
+                        ]
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "events:DescribeRule",
+                            "events:PutRule",
+                            "events:PutTargets"
+                        ],
+                        "Resource": [
+                            "arn:aws:events:*:*:rule/StepFunctionsGetEventsForSageMakerTrainingJobsRule"
+                        ]
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "lambda:InvokeFunction"
+                        ],
+                        "Resource": [
+                            "arn:aws:lambda:*:*:function:query-training-status*"
+                        ]
+                    },
+                    {
+                        "Effect": "Allow",
+                        "Action": [
+                            "glue:StartJobRun",
+                            "glue:GetJobRun",
+                            "glue:BatchStopJobRun",
+                            "glue:GetJobRuns"
+                        ],
+                        "Resource": "arn:aws:glue:*:*:job/glue-customer-churn-etl*"
+                    }
+                ]
+            },
+            "Roles": [ {
+               "Ref": "StepFunctionsRole"
+            } ]
+         }
+      },
+      
+      "GlueRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "RoleName": {"Fn::Sub": "AWS-Glue-S3-Bucket-Access-${AWS::AccountId}"},
+            "AssumeRolePolicyDocument": {
+               "Version" : "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": [ "glue.amazonaws.com" ]
+                  },
+                  "Action": [ "sts:AssumeRole" ]
+               } ]
+            },
+            "Path": "/"
+         }
+      },
+    
+      "GlueRolePolicies": {
+         "Type": "AWS::IAM::Policy",
+         "Properties": {
+            "PolicyName": {"Fn::Sub": "Glue_S3_Access-${AWS::AccountId}"},
+            "PolicyDocument": {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "ListObjectsInBucket",
+                        "Effect": "Allow",
+                        "Action": ["s3:ListBucket"],
+                        "Resource": {
+                                      "Fn::Join": [
+                                        "", ["arn:aws:s3:::", {"Ref": "BucketName"}]
+                                      ]
+                                    }
+                    },
+                    {
+                        "Sid": "AllObjectActions",
+                        "Effect": "Allow",
+                        "Action": "s3:*Object",
+                        "Resource": {
+                                      "Fn::Join": [
+                                        "", ["arn:aws:s3:::", {"Ref": "BucketName"}, "/*"]
+                                      ]
+                                    }
+                    },
+                    {
+                        "Sid":"CreatePutLogs",
+                        "Effect": "Allow",
+                        "Action": [
+                            "logs:CreateLogGroup",
+                            "logs:CreateLogStream",
+                            "logs:PutLogEvents"
+                        ],
+                        "Resource": "*"
+                    }
+                ]
+            },
+            "Roles": [ {
+               "Ref": "GlueRole"
+            } ]
+         }
+      },
+        
+      "LambdaRole": {
+         "Type": "AWS::IAM::Role",
+         "Properties": {
+            "RoleName": {"Fn::Sub": "query_training_status-role-${AWS::AccountId}"},
+            "AssumeRolePolicyDocument": {
+               "Version" : "2012-10-17",
+               "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": [ "lambda.amazonaws.com" ]
+                  },
+                  "Action": [ "sts:AssumeRole" ]
+               } ]
+            },
+            "Path": "/",
+            "ManagedPolicyArns" : [
+                                   'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole', 
+                                   'arn:aws:iam::aws:policy/AmazonSageMakerReadOnly' 
+                                  ],
+         }
+      },
+                             
+    },
+
+    "Outputs" : {
+      "StepFunctionsRoleArn" : {
+        "Value" : { "Fn::GetAtt" : [ "StepFunctionsRole", "Arn" ]}
+      },
+      "GlueRoleArn" : {
+        "Value" : { "Fn::GetAtt" : [ "GlueRole", "Arn" ]}
+      },
+      "LambdaRoleArn" : {
+        "Value" : { "Fn::GetAtt" : [ "LambdaRole", "Arn" ]}
+      }
+    }
+}
